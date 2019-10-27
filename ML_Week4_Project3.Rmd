@@ -1,0 +1,162 @@
+---
+title: "ML Week4 Project"
+author: "Rad"
+date: "10/23/2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+Project Goal
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+```{r setup, include=TRUE}
+
+chooseCRANmirror(graphics=FALSE, ind=1)
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+
+
+
+```{r echo=TRUE}
+
+# install.packages("caret")
+# install.packages("rpart")
+# #install.packages("rpart.plot")
+# install.packages("randomForest")
+# 
+# install.packages("lmtest", repos = "http://cran.us.r-project.org")
+
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+
+library(lattice)
+library(ggplot2)
+
+
+```
+
+
+
+```{r echo=TRUE}
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",destfile ="training.csv",method="curl", mode="wb")
+
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",destfile ="testing.csv",method="curl", mode="wb")
+
+
+trainingdata<-read.csv("training.csv", header=TRUE, na.strings=c("NA", "", "#DIV/0!"))
+testingdata<-read.csv("testing.csv", header=TRUE, na.strings=c("NA", "", "#DIV/0!"))
+
+trainingdata$classe<-as.factor(trainingdata$classe)
+
+table(trainingdata$classe, trainingdata$user_name)
+which(names(trainingdata) != names(testingdata))
+
+nas <- apply(trainingdata, 2, function(x) sum(is.na(x)))
+trainingdata <- trainingdata[,nas<1000]
+testingdata <- testingdata[,nas<1000]
+
+```
+
+Removing first 6 columns since they are not needed for analysis
+```{r echo=TRUE}
+trainingdata <- trainingdata[,-1:-6]
+testingdata <- testingdata[,-1:-6]
+
+```
+
+
+The following cluster dendogram shows the correlations (R2) between the columns. The formula 1−R2 is used to measure the distance matrix:
+```{r echo=TRUE}
+
+dist <- as.dist(1-(cor(trainingdata[,-54])^2))
+plot(hclust(dist),main="Corr. Cluster Dendogram",xlab="Dist",ylab="Ht.")
+
+
+```
+
+
+Training data set to 60%, validation set to 40%, 5% data to identify predictors
+
+```{r echo=TRUE}
+#install.packages("numDeriv")
+
+tst <- createDataPartition(y=trainingdata$classe, p=0.60, list=FALSE)
+training_set  <- trainingdata[tst,]
+validation_set  <- trainingdata[-tst,]
+trainingsmall <- trainingdata[createDataPartition(y=trainingdata$classe, p=0.05, list=FALSE),]
+
+```
+
+Modeling
+
+```{r echo=TRUE}
+rf_model<-train(classe~., data=trainingsmall, method="rf")
+varImp(rf_model)
+
+```
+
+
+Narrowed down the variables for further analysis:
+```{r echo=TRUE}
+top <- cbind(name = rownames(varImp(rf_model)[[1]]), value = varImp(rf_model)[[1]])
+selected_data <- as.character(top[order(top[,2], decreasing = T),][1:10,1])
+
+selected_data <- c(selected_data, "classe")
+
+training_set <- training_set[selected_data]
+validation_set <- validation_set[selected_data]
+
+```
+
+
+Checking correlation among variables
+
+```{r echo=TRUE}
+dist <- as.dist(1-(cor(training_set[,-11])^2))
+
+
+plot(hclust(dist),main="Corr. Cluster Dendogram",xlab="Dist",ylab="Ht.")
+```
+
+
+observing a strong relationship between roll_belt and accel_belt_z on the cluster dendrogram above
+
+
+Random Forest Model
+```{r echo=TRUE}
+modelRF<-train(classe~., data=training_set, method="rf")
+```
+
+Model Validation
+
+```{r echo=TRUE}
+predicted <- predict(modelRF, newdata=validation_set)
+
+# false positives, false negatives, true positives, and true negatives. 
+
+confusionMatrix(predicted, validation_set$classe)
+
+```
+
+
+
+SUMMARY
+Data were cleaned for missing values. Cluster dendrogram used to find correlation. Variables tested for relative importance using random forest model. Shortlisted 10 variables for final calculation.
+
+RFM predicted data with 99% accuracy with error rate of 0.28%.
+
+
+
+Prediction
+```{r echo=TRUE}
+
+data.frame(testingdata$problem_id, predicted = predict(modelRF, newdata=testingdata))
+
+
+```
